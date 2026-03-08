@@ -6,6 +6,7 @@ import type { Product } from "@/lib/products";
 import { motion } from "framer-motion";
 import { useCart } from "@/lib/cart";
 import { ShoppingCart } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 
 interface Props {
@@ -45,10 +46,19 @@ export default function ProductCard({ product, onOpen }: Props) {
       className="bg-white rounded-2xl overflow-hidden shadow-sm group border border-gray-100 flex flex-col"
     >
       {/* Image area */}
-      <div className="relative h-64 bg-gradient-to-br from-cream-50 via-amber-50 to-amber-100 flex items-center justify-center">
-        <span className="text-8xl group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
-          {emojiMap[product.category] || "🍰"}
-        </span>
+      <div className="relative h-64 bg-gradient-to-br from-cream-50 via-amber-50 to-amber-100 flex items-center justify-center overflow-hidden">
+        {product.image ? (
+          <Image
+            src={product.image}
+            alt={name}
+            fill
+            className="object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        ) : (
+          <span className="text-8xl group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
+            {emojiMap[product.category] || "🍰"}
+          </span>
+        )}
 
         {product.badge && (
           <span
