@@ -40,6 +40,52 @@ async function replyWithButtons(
   });
 }
 
+async function sendProductCard(
+  chatId: number,
+  p: { nameUz: string; nameRu: string; descUz: string; descRu: string; price: number; category: string; slug: string; image: string },
+  index: number
+) {
+  const categoryNames: Record<string, string> = {
+    cakes: "🎂 Tortlar", cupcakes: "🧁 Kekslar",
+    cookies: "🍪 Pechenye", pastries: "🥐 Pishiriq",
+  };
+  const caption =
+    `${index}. <b>${p.nameUz}</b> / <b>${p.nameRu}</b>\n\n` +
+    `📄 ${p.descUz}\n${p.descRu}\n\n` +
+    `💰 <b>${p.price.toLocaleString()} so'm</b>\n` +
+    `📂 ${categoryNames[p.category] ?? p.category}\n` +
+    `🔑 <code>${p.slug}</code>`;
+
+  const markup = {
+    inline_keyboard: [[{ text: "🗑 O'chirish", callback_data: `del:${p.slug}` }]],
+  };
+
+  if (p.image) {
+    await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo: p.image,
+        caption,
+        parse_mode: "HTML",
+        reply_markup: markup,
+      }),
+    });
+  } else {
+    await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: caption,
+        parse_mode: "HTML",
+        reply_markup: markup,
+      }),
+    });
+  }
+}
+
 async function answerCallback(id: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
     method: "POST",
@@ -321,12 +367,9 @@ export async function POST(req: NextRequest) {
       await reply(chatId, "📭 Mahsulotlar yo'q.");
       return NextResponse.json({ ok: true });
     }
+    await reply(chatId, `📦 <b>Jami ${products.length} ta mahsulot:</b>`);
     for (const [i, p] of products.entries()) {
-      await replyWithButtons(
-        chatId,
-        `${i + 1}. <b>${p.nameUz}</b>\n💰 ${p.price.toLocaleString()} so'm · ${p.category} ${p.image ? "🖼" : ""}`,
-        [[{ text: "🗑 O'chirish", data: `del:${p.slug}` }]]
-      );
+      await sendProductCard(chatId, p, i + 1);
     }
     return NextResponse.json({ ok: true });
   }
