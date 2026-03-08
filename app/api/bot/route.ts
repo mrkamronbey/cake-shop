@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (!message) return NextResponse.json({ ok: true });
 
   const chatId: number = message.chat.id;
-  const text: string = message.text ?? "";
+  const text: string = (message.text ?? "").split("@")[0].trim();
 
   // Har kim o'z ID'sini bilib olishi uchun
   if (text === "/myid") {
