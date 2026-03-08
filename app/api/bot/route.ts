@@ -148,6 +148,42 @@ export async function POST(req: NextRequest) {
     const wizard = await getWizard(chatId);
     if (!wizard) return NextResponse.json({ ok: true });
 
+    // O'chirish tugmasi bosildi — tasdiqlash so'ra
+    if (data.startsWith("del:")) {
+      const slug = data.replace("del:", "");
+      await replyWithButtons(
+        chatId,
+        `🗑 <b>O'chirishni tasdiqlaysizmi?</b>\n\n<code>${slug}</code>`,
+        [
+          [
+            { text: "✅ Ha, o'chir", data: `del_confirm:${slug}` },
+            { text: "❌ Yo'q", data: "del_cancel" },
+          ],
+        ]
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    // O'chirishni tasdiqladi
+    if (data.startsWith("del_confirm:")) {
+      const slug = data.replace("del_confirm:", "");
+      const deleted = await deleteProduct(slug);
+      if (deleted) {
+        revalidatePath("/uz");
+        revalidatePath("/ru");
+        await reply(chatId, `✅ <b>${deleted.nameUz}</b> o'chirildi.`);
+      } else {
+        await reply(chatId, `❌ <code>${slug}</code> topilmadi.`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // O'chirishni bekor qildi
+    if (data === "del_cancel") {
+      await reply(chatId, "❌ Bekor qilindi.");
+      return NextResponse.json({ ok: true });
+    }
+
     // Kategoriya tanlandi
     if (data.startsWith("cat:") && wizard.step === "category") {
       const category = data.replace("cat:", "");
@@ -285,11 +321,13 @@ export async function POST(req: NextRequest) {
       await reply(chatId, "📭 Mahsulotlar yo'q.");
       return NextResponse.json({ ok: true });
     }
-    const lines = products.map(
-      (p, i) =>
-        `${i + 1}. <b>${p.nameUz}</b> — ${p.price.toLocaleString()} so'm\n   <code>${p.slug}</code> · ${p.category} ${p.image ? "🖼" : ""}`
-    );
-    await reply(chatId, `📦 <b>Mahsulotlar (${products.length} ta):</b>\n\n${lines.join("\n\n")}`);
+    for (const [i, p] of products.entries()) {
+      await replyWithButtons(
+        chatId,
+        `${i + 1}. <b>${p.nameUz}</b>\n💰 ${p.price.toLocaleString()} so'm · ${p.category} ${p.image ? "🖼" : ""}`,
+        [[{ text: "🗑 O'chirish", data: `del:${p.slug}` }]]
+      );
+    }
     return NextResponse.json({ ok: true });
   }
 
