@@ -145,9 +145,6 @@ export async function POST(req: NextRequest) {
 
     if (!(await isAdmin(chatId))) return NextResponse.json({ ok: true });
 
-    const wizard = await getWizard(chatId);
-    if (!wizard) return NextResponse.json({ ok: true });
-
     // O'chirish tugmasi bosildi — tasdiqlash so'ra
     if (data.startsWith("del:")) {
       const slug = data.replace("del:", "");
@@ -183,6 +180,9 @@ export async function POST(req: NextRequest) {
       await reply(chatId, "❌ Bekor qilindi.");
       return NextResponse.json({ ok: true });
     }
+
+    const wizard = await getWizard(chatId);
+    if (!wizard) return NextResponse.json({ ok: true });
 
     // Kategoriya tanlandi
     if (data.startsWith("cat:") && wizard.step === "category") {
