@@ -9,6 +9,8 @@ const TOKEN = process.env.ADMIN_BOT_TOKEN!;
 const SUPER_ADMIN = process.env.ADMIN_TELEGRAM_ID!;
 const ADMINS_KEY = "sweetcake:admins";
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 async function reply(chatId: number, text: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
@@ -17,10 +19,33 @@ async function reply(chatId: number, text: string) {
   });
 }
 
-async function isAdmin(chatId: number): Promise<boolean> {
-  if (String(chatId) === SUPER_ADMIN) return true;
-  const admins = await redis.smembers(ADMINS_KEY);
-  return admins.includes(String(chatId));
+async function replyWithButtons(
+  chatId: number,
+  text: string,
+  buttons: { text: string; data: string }[][]
+) {
+  await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: buttons.map((row) =>
+          row.map((btn) => ({ text: btn.text, callback_data: btn.data }))
+        ),
+      },
+    }),
+  });
+}
+
+async function answerCallback(id: string) {
+  await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: id }),
+  });
 }
 
 async function getTelegramFileUrl(fileId: string): Promise<string> {
@@ -29,163 +54,219 @@ async function getTelegramFileUrl(fileId: string): Promise<string> {
   return `https://api.telegram.org/file/bot${TOKEN}/${data.result.file_path}`;
 }
 
+async function isAdmin(chatId: number): Promise<boolean> {
+  if (String(chatId) === SUPER_ADMIN) return true;
+  const admins = await redis.smembers(ADMINS_KEY);
+  return admins.includes(String(chatId));
+}
+
+// ── Wizard ─────────────────────────────────────────────────────────────────
+
+type WizardStep = "name_uz" | "name_ru" | "price" | "category" | "desc_uz" | "desc_ru" | "badge" | "photo";
+
+interface WizardState {
+  step: WizardStep;
+  data: Partial<{
+    nameUz: string;
+    nameRu: string;
+    price: number;
+    category: string;
+    descUz: string;
+    descRu: string;
+    badge: string;
+  }>;
+}
+
+async function getWizard(chatId: number): Promise<WizardState | null> {
+  return redis.get<WizardState>(`sweetcake:wizard:${chatId}`);
+}
+
+async function setWizard(chatId: number, state: WizardState) {
+  await redis.set(`sweetcake:wizard:${chatId}`, state, { ex: 1800 }); // 30 daqiqa
+}
+
+async function delWizard(chatId: number) {
+  await redis.del(`sweetcake:wizard:${chatId}`);
+}
+
+async function askStep(chatId: number, step: WizardStep) {
+  const messages: Record<WizardStep, () => Promise<void>> = {
+    name_uz: () => reply(chatId, "📝 <b>1/7</b> — Mahsulot nomi <b>(UZ)</b>:\n\nMisol: <i>Shokolad torti</i>"),
+    name_ru: () => reply(chatId, "📝 <b>2/7</b> — Mahsulot nomi <b>(RU)</b>:\n\nMisol: <i>Шоколадный торт</i>"),
+    price:   () => reply(chatId, "💰 <b>3/7</b> — Narxi <b>(so'm)</b>:\n\nMisol: <i>150000</i>"),
+    category: () =>
+      replyWithButtons(chatId, "📂 <b>4/7</b> — Kategoriyani tanlang:", [
+        [
+          { text: "🎂 Tortlar", data: "cat:cakes" },
+          { text: "🧁 Kekslar", data: "cat:cupcakes" },
+        ],
+        [
+          { text: "🍪 Pechenye", data: "cat:cookies" },
+          { text: "🥐 Pishiriq", data: "cat:pastries" },
+        ],
+      ]),
+    desc_uz: () => reply(chatId, "📄 <b>5/7</b> — Qisqa tavsif <b>(UZ)</b>:\n\nMisol: <i>Belgiya shokoladi bilan</i>"),
+    desc_ru: () => reply(chatId, "📄 <b>6/7</b> — Qisqa tavsif <b>(RU)</b>:\n\nMisol: <i>С бельгийским шоколадом</i>"),
+    badge: () =>
+      replyWithButtons(chatId, "🏷 <b>7/7</b> — Nishon (badge):", [
+        [
+          { text: "🔥 Popular", data: "badge:popular" },
+          { text: "✨ Yangi", data: "badge:new" },
+          { text: "— Yo'q", data: "badge:none" },
+        ],
+      ]),
+    photo: () =>
+      reply(
+        chatId,
+        "📸 <b>Rasm yuboring</b>\n\nYoki:\n/skip — rasmsiz saqlash\n/cancel — bekor qilish"
+      ),
+  };
+  await messages[step]();
+}
+
+// ── Main handler ───────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
+
+  // ── Callback query (tugma bosilganda) ────────────────────────────────────
+  if (body.callback_query) {
+    const cb = body.callback_query;
+    const chatId: number = cb.message.chat.id;
+    const data: string = cb.data;
+
+    await answerCallback(cb.id);
+
+    if (!(await isAdmin(chatId))) return NextResponse.json({ ok: true });
+
+    const wizard = await getWizard(chatId);
+    if (!wizard) return NextResponse.json({ ok: true });
+
+    // Kategoriya tanlandi
+    if (data.startsWith("cat:") && wizard.step === "category") {
+      const category = data.replace("cat:", "");
+      const categoryNames: Record<string, string> = {
+        cakes: "🎂 Tortlar", cupcakes: "🧁 Kekslar",
+        cookies: "🍪 Pechenye", pastries: "🥐 Pishiriq",
+      };
+      wizard.data.category = category;
+      wizard.step = "desc_uz";
+      await setWizard(chatId, wizard);
+      await reply(chatId, `✅ ${categoryNames[category]} tanlandi.`);
+      await askStep(chatId, "desc_uz");
+    }
+
+    // Badge tanlandi
+    if (data.startsWith("badge:") && wizard.step === "badge") {
+      const badge = data.replace("badge:", "");
+      wizard.data.badge = badge === "none" ? "" : badge;
+      wizard.step = "photo";
+      await setWizard(chatId, wizard);
+      await askStep(chatId, "photo");
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Message ──────────────────────────────────────────────────────────────
   const message = body.message;
   if (!message) return NextResponse.json({ ok: true });
 
   const chatId: number = message.chat.id;
   const text: string = (message.text ?? "").split("@")[0].trim();
 
-  // Har kim o'z ID'sini bilib olishi uchun
   if (text === "/myid") {
     await reply(chatId, `Sizning Telegram ID: <code>${chatId}</code>`);
     return NextResponse.json({ ok: true });
   }
 
-  // Admin tekshiruvi
   if (!(await isAdmin(chatId))) {
     await reply(chatId, "⛔ Sizda ruxsat yo'q.");
     return NextResponse.json({ ok: true });
   }
 
   const isSuperAdmin = String(chatId) === SUPER_ADMIN;
-  const pendingKey = `sweetcake:pending:${chatId}`;
 
-  // ── RASM QABUL QILISH (photo yoki document) ───────────────────────────────
+  // ── /cancel ──────────────────────────────────────────────────────────────
+  if (text === "/cancel") {
+    await delWizard(chatId);
+    await reply(chatId, "❌ Bekor qilindi.");
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Wizard davomida matn qabul qilish ─────────────────────────────────────
+  const wizard = await getWizard(chatId);
+
+  if (wizard && text && !text.startsWith("/")) {
+    switch (wizard.step) {
+      case "name_uz":
+        wizard.data.nameUz = text;
+        wizard.step = "name_ru";
+        break;
+      case "name_ru":
+        wizard.data.nameRu = text;
+        wizard.step = "price";
+        break;
+      case "price": {
+        const price = parseInt(text.replace(/\D/g, ""));
+        if (isNaN(price) || price <= 0) {
+          await reply(chatId, "❌ Narx noto'g'ri. Faqat raqam kiriting:");
+          return NextResponse.json({ ok: true });
+        }
+        wizard.data.price = price;
+        wizard.step = "category";
+        break;
+      }
+      case "desc_uz":
+        wizard.data.descUz = text;
+        wizard.step = "desc_ru";
+        break;
+      case "desc_ru":
+        wizard.data.descRu = text;
+        wizard.step = "badge";
+        break;
+    }
+    await setWizard(chatId, wizard);
+    await askStep(chatId, wizard.step);
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Rasm qabul qilish (wizard photo bosqichi) ─────────────────────────────
   const fileId = message.photo
     ? message.photo[message.photo.length - 1].file_id
     : message.document?.mime_type?.startsWith("image/")
     ? message.document.file_id
     : null;
 
-  if (fileId) {
-    const pending = await redis.get<Omit<Product, "image">>(pendingKey);
-
-    if (!pending) {
-      await reply(chatId, "❓ Avval /add orqali mahsulot ma'lumotlarini yuboring.");
-      return NextResponse.json({ ok: true });
-    }
-
+  if (fileId && wizard?.step === "photo") {
     await reply(chatId, "⏳ Rasm yuklanmoqda...");
-
     try {
       const fileUrl = await getTelegramFileUrl(fileId);
       const imageUrl = await uploadFromUrl(fileUrl);
-
-      const product: Product = { ...pending, image: imageUrl };
-      await addProduct(product);
-      await redis.del(pendingKey);
-      revalidatePath("/uz");
-      revalidatePath("/ru");
-
-      await reply(
-        chatId,
-        `✅ <b>${product.nameUz}</b> muvaffaqiyatli qo'shildi!\n\nNarx: ${product.price.toLocaleString()} so'm\nKategoriya: ${product.category}`
-      );
+      await saveProduct(chatId, wizard, imageUrl);
     } catch {
-      await reply(chatId, "❌ Rasm yuklanmadi. Qayta urinib ko'ring.");
+      await reply(chatId, "❌ Rasm yuklanmadi. Qayta yuboring.");
     }
     return NextResponse.json({ ok: true });
   }
 
-  // ── /skip — Rasmsiz saqlash ────────────────────────────────────────────────
-  if (text === "/skip") {
-    const pending = await redis.get<Omit<Product, "image">>(pendingKey);
-    if (!pending) {
-      await reply(chatId, "❓ Kutilayotgan mahsulot yo'q.");
-      return NextResponse.json({ ok: true });
-    }
-    const product: Product = { ...pending, image: "" };
-    await addProduct(product);
-    await redis.del(pendingKey);
-    revalidatePath("/uz");
-    revalidatePath("/ru");
-    await reply(chatId, `✅ <b>${product.nameUz}</b> rasmsiz qo'shildi.`);
+  // ── /skip — rasmsiz saqlash ───────────────────────────────────────────────
+  if (text === "/skip" && wizard?.step === "photo") {
+    await saveProduct(chatId, wizard, "");
     return NextResponse.json({ ok: true });
   }
 
-  // ── /cancel — Bekor qilish ─────────────────────────────────────────────────
-  if (text === "/cancel") {
-    await redis.del(pendingKey);
-    await reply(chatId, "❌ Bekor qilindi.");
+  // ── /add — wizard boshlash ─────────────────────────────────────────────────
+  if (text === "/add") {
+    await delWizard(chatId);
+    const newWizard: WizardState = { step: "name_uz", data: {} };
+    await setWizard(chatId, newWizard);
+    await reply(chatId, "➕ <b>Yangi mahsulot qo'shish</b>\n\n/cancel — istalgan vaqt bekor qilish");
+    await askStep(chatId, "name_uz");
     return NextResponse.json({ ok: true });
   }
 
-  // ── /start, /help ──────────────────────────────────────────────────────────
-  if (text === "/start" || text === "/help") {
-    const superCmds = isSuperAdmin
-      ? `\n\n<b>Super admin:</b>\n/add_admin ID — admin qo'shish\n/remove_admin ID — adminni o'chirish\n/admins — adminlar ro'yxati`
-      : "";
-
-    await reply(
-      chatId,
-      `🎂 <b>Sweet Cake Admin Bot</b>\n\n` +
-        `<b>Mahsulot qo'shish:</b>\n` +
-        `/add nomUz | nomRu | narx | kategoriya | tavsifUz | tavsifRu\n` +
-        `↳ So'ng rasm yuboring yoki /skip\n\n` +
-        `<b>Kategoriyalar:</b> cakes · cupcakes · cookies · pastries\n\n` +
-        `<b>Buyruqlar:</b>\n` +
-        `/list — barcha mahsulotlar\n` +
-        `/delete slug — o'chirish\n` +
-        `/cancel — joriy amalni bekor qilish\n` +
-        `/seed — standart mahsulotlarni yuklash` +
-        superCmds +
-        `\n\n<b>Misol:</b>\n` +
-        `/add Shokolad torti | Шоколадный торт | 150000 | cakes | Mazali shokolad torti | Вкусный торт`
-    );
-    return NextResponse.json({ ok: true });
-  }
-
-  // ── /admins ────────────────────────────────────────────────────────────────
-  if (text === "/admins") {
-    if (!isSuperAdmin) {
-      await reply(chatId, "⛔ Faqat super admin uchun.");
-      return NextResponse.json({ ok: true });
-    }
-    const admins = await redis.smembers(ADMINS_KEY);
-    const list = admins.length > 0 ? admins.map((id) => `• <code>${id}</code>`).join("\n") : "— yo'q";
-    await reply(chatId, `👥 <b>Adminlar:</b>\n\n⭐ <code>${SUPER_ADMIN}</code> (super)\n${list}`);
-    return NextResponse.json({ ok: true });
-  }
-
-  // ── /add_admin ─────────────────────────────────────────────────────────────
-  if (text.startsWith("/add_admin")) {
-    if (!isSuperAdmin) {
-      await reply(chatId, "⛔ Faqat super admin uchun.");
-      return NextResponse.json({ ok: true });
-    }
-    const newId = text.replace("/add_admin", "").trim();
-    if (!newId || isNaN(Number(newId))) {
-      await reply(chatId, "❌ Format: /add_admin 123456789");
-      return NextResponse.json({ ok: true });
-    }
-    if (newId === SUPER_ADMIN) {
-      await reply(chatId, "ℹ️ Siz allaqachon super adminsiz.");
-      return NextResponse.json({ ok: true });
-    }
-    await redis.sadd(ADMINS_KEY, newId);
-    await reply(chatId, `✅ <code>${newId}</code> admin qilib qo'shildi.`);
-    return NextResponse.json({ ok: true });
-  }
-
-  // ── /remove_admin ──────────────────────────────────────────────────────────
-  if (text.startsWith("/remove_admin")) {
-    if (!isSuperAdmin) {
-      await reply(chatId, "⛔ Faqat super admin uchun.");
-      return NextResponse.json({ ok: true });
-    }
-    const removeId = text.replace("/remove_admin", "").trim();
-    if (!removeId) {
-      await reply(chatId, "❌ Format: /remove_admin 123456789");
-      return NextResponse.json({ ok: true });
-    }
-    await redis.srem(ADMINS_KEY, removeId);
-    await reply(chatId, `✅ <code>${removeId}</code> adminlikdan olib tashlandi.`);
-    return NextResponse.json({ ok: true });
-  }
-
-  // ── /list ──────────────────────────────────────────────────────────────────
+  // ── /list ─────────────────────────────────────────────────────────────────
   if (text === "/list") {
     const products = await getProducts();
     if (products.length === 0) {
@@ -194,13 +275,13 @@ export async function POST(req: NextRequest) {
     }
     const lines = products.map(
       (p, i) =>
-        `${i + 1}. <b>${p.nameUz}</b> — ${p.price.toLocaleString()} so'm\n   <code>${p.slug}</code> · ${p.category} ${p.image ? "🖼" : "—"}`
+        `${i + 1}. <b>${p.nameUz}</b> — ${p.price.toLocaleString()} so'm\n   <code>${p.slug}</code> · ${p.category} ${p.image ? "🖼" : ""}`
     );
     await reply(chatId, `📦 <b>Mahsulotlar (${products.length} ta):</b>\n\n${lines.join("\n\n")}`);
     return NextResponse.json({ ok: true });
   }
 
-  // ── /delete slug ───────────────────────────────────────────────────────────
+  // ── /delete slug ──────────────────────────────────────────────────────────
   if (text.startsWith("/delete ")) {
     const slug = text.slice(8).trim();
     const deleted = await deleteProduct(slug);
@@ -214,67 +295,99 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── /seed ──────────────────────────────────────────────────────────────────
+  // ── /seed ─────────────────────────────────────────────────────────────────
   if (text === "/seed") {
     await seedProducts();
     revalidatePath("/uz");
     revalidatePath("/ru");
-    await reply(chatId, `✅ Standart mahsulotlar yuklandi.`);
+    await reply(chatId, "✅ Standart mahsulotlar yuklandi.");
     return NextResponse.json({ ok: true });
   }
 
-  // ── /add ───────────────────────────────────────────────────────────────────
-  if (text.startsWith("/add ")) {
-    const parts = text.slice(5).split("|").map((s) => s.trim());
-
-    if (parts.length < 6) {
-      await reply(
-        chatId,
-        `❌ Noto'g'ri format. Misol:\n\n/add Shokolad torti | Шоколадный торт | 150000 | cakes | Mazali shokolad torti | Вкусный шоколадный торт`
-      );
-      return NextResponse.json({ ok: true });
-    }
-
-    const [nameUz, nameRu, priceStr, category, descUz, descRu, badge] = parts;
-    const validCategories = ["cakes", "cupcakes", "cookies", "pastries"];
-
-    if (!validCategories.includes(category)) {
-      await reply(chatId, `❌ Kategoriya noto'g'ri.\nFaqat: <code>cakes · cupcakes · cookies · pastries</code>`);
-      return NextResponse.json({ ok: true });
-    }
-
-    const price = parseInt(priceStr.replace(/\D/g, ""));
-    if (isNaN(price) || price <= 0) {
-      await reply(chatId, `❌ Narx noto'g'ri: <code>${priceStr}</code>`);
-      return NextResponse.json({ ok: true });
-    }
-
-    const existing = await getProducts();
-    const id = existing.length > 0 ? Math.max(...existing.map((p) => p.id)) + 1 : 1;
-
-    const pending = {
-      id,
-      slug: `product-${id}`,
-      nameUz,
-      nameRu,
-      descUz,
-      descRu,
-      longDescUz: descUz,
-      longDescRu: descRu,
-      price,
-      category: category as Product["category"],
-      badge: (badge === "popular" || badge === "new" ? badge : null) as Product["badge"],
-    };
-
-    await redis.set(pendingKey, pending, { ex: 600 }); // 10 daqiqa
-
+  // ── /start, /help ─────────────────────────────────────────────────────────
+  if (text === "/start" || text === "/help") {
+    const superCmds = isSuperAdmin
+      ? `\n\n<b>Super admin:</b>\n/add_admin ID\n/remove_admin ID\n/admins`
+      : "";
     await reply(
       chatId,
-      `✅ Ma'lumotlar saqlandi!\n\n<b>${nameUz}</b> · ${price.toLocaleString()} so'm\n\n📸 Endi mahsulot rasmini yuboring.\nYoki /skip — rasmsiz qo'shish\nYoki /cancel — bekor qilish`
+      `🎂 <b>Sweet Cake Admin Bot</b>\n\n` +
+        `/add — yangi mahsulot qo'shish\n` +
+        `/list — mahsulotlar ro'yxati\n` +
+        `/delete slug — o'chirish\n` +
+        `/seed — standart mahsulotlarni yuklash\n` +
+        `/cancel — joriy amalni bekor qilish` +
+        superCmds
     );
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Super admin buyruqlari ────────────────────────────────────────────────
+  if (text === "/admins") {
+    if (!isSuperAdmin) return NextResponse.json({ ok: true });
+    const admins = await redis.smembers(ADMINS_KEY);
+    const list = admins.length > 0 ? admins.map((id) => `• <code>${id}</code>`).join("\n") : "— yo'q";
+    await reply(chatId, `👥 <b>Adminlar:</b>\n\n⭐ <code>${SUPER_ADMIN}</code> (super)\n${list}`);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (text.startsWith("/add_admin")) {
+    if (!isSuperAdmin) return NextResponse.json({ ok: true });
+    const id = text.replace("/add_admin", "").trim();
+    if (!id || isNaN(Number(id))) {
+      await reply(chatId, "❌ Format: /add_admin 123456789");
+      return NextResponse.json({ ok: true });
+    }
+    await redis.sadd(ADMINS_KEY, id);
+    await reply(chatId, `✅ <code>${id}</code> admin qilib qo'shildi.`);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (text.startsWith("/remove_admin")) {
+    if (!isSuperAdmin) return NextResponse.json({ ok: true });
+    const id = text.replace("/remove_admin", "").trim();
+    await redis.srem(ADMINS_KEY, id);
+    await reply(chatId, `✅ <code>${id}</code> adminlikdan olib tashlandi.`);
     return NextResponse.json({ ok: true });
   }
 
   await reply(chatId, `❓ Noma'lum buyruq. /help yuboring.`);
   return NextResponse.json({ ok: true });
+}
+
+// ── Mahsulotni saqlash ─────────────────────────────────────────────────────
+
+async function saveProduct(chatId: number, wizard: WizardState, imageUrl: string) {
+  const { nameUz, nameRu, price, category, descUz, descRu, badge } = wizard.data;
+
+  const existing = await getProducts();
+  const id = existing.length > 0 ? Math.max(...existing.map((p) => p.id)) + 1 : 1;
+
+  const product: Product = {
+    id,
+    slug: `product-${id}`,
+    nameUz: nameUz!,
+    nameRu: nameRu!,
+    descUz: descUz!,
+    descRu: descRu!,
+    longDescUz: descUz!,
+    longDescRu: descRu!,
+    price: price!,
+    category: category as Product["category"],
+    badge: (badge === "popular" || badge === "new" ? badge : null) as Product["badge"],
+    image: imageUrl,
+  };
+
+  await addProduct(product);
+  await delWizard(chatId);
+  revalidatePath("/uz");
+  revalidatePath("/ru");
+
+  await reply(
+    chatId,
+    `✅ <b>${nameUz}</b> muvaffaqiyatli qo'shildi!\n\n` +
+      `💰 ${price!.toLocaleString()} so'm\n` +
+      `📂 ${category}\n` +
+      `🖼 ${imageUrl ? "Rasm bor" : "Rasmsiz"}`
+  );
 }
