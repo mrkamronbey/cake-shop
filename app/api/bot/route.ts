@@ -52,8 +52,14 @@ export async function POST(req: NextRequest) {
   const isSuperAdmin = String(chatId) === SUPER_ADMIN;
   const pendingKey = `sweetcake:pending:${chatId}`;
 
-  // ── RASM QABUL QILISH ──────────────────────────────────────────────────────
-  if (message.photo) {
+  // ── RASM QABUL QILISH (photo yoki document) ───────────────────────────────
+  const fileId = message.photo
+    ? message.photo[message.photo.length - 1].file_id
+    : message.document?.mime_type?.startsWith("image/")
+    ? message.document.file_id
+    : null;
+
+  if (fileId) {
     const pending = await redis.get<Omit<Product, "image">>(pendingKey);
 
     if (!pending) {
@@ -64,8 +70,7 @@ export async function POST(req: NextRequest) {
     await reply(chatId, "⏳ Rasm yuklanmoqda...");
 
     try {
-      const largestPhoto = message.photo[message.photo.length - 1];
-      const fileUrl = await getTelegramFileUrl(largestPhoto.file_id);
+      const fileUrl = await getTelegramFileUrl(fileId);
       const imageUrl = await uploadFromUrl(fileUrl);
 
       const product: Product = { ...pending, image: imageUrl };
