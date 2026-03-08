@@ -62,7 +62,7 @@ async function isAdmin(chatId: number): Promise<boolean> {
 
 // ── Wizard ─────────────────────────────────────────────────────────────────
 
-type WizardStep = "name_uz" | "name_ru" | "price" | "category" | "desc_uz" | "desc_ru" | "badge" | "photo";
+type WizardStep = "name" | "price" | "category" | "desc" | "badge" | "photo";
 
 interface WizardState {
   step: WizardStep;
@@ -91,11 +91,14 @@ async function delWizard(chatId: number) {
 
 async function askStep(chatId: number, step: WizardStep) {
   const messages: Record<WizardStep, () => Promise<void>> = {
-    name_uz: () => reply(chatId, "📝 <b>1/7</b> — Mahsulot nomi <b>(UZ)</b>:\n\nMisol: <i>Shokolad torti</i>"),
-    name_ru: () => reply(chatId, "📝 <b>2/7</b> — Mahsulot nomi <b>(RU)</b>:\n\nMisol: <i>Шоколадный торт</i>"),
-    price:   () => reply(chatId, "💰 <b>3/7</b> — Narxi <b>(so'm)</b>:\n\nMisol: <i>150000</i>"),
+    name: () =>
+      reply(
+        chatId,
+        "📝 <b>1/5</b> — Mahsulot nomi:\n\nUZ va RU tilida, ikki qatorda yuboring:\n\n<i>Shokolad torti\nШоколадный торт</i>"
+      ),
+    price: () => reply(chatId, "💰 <b>2/5</b> — Narxi <b>(so'm)</b>:\n\nMisol: <i>150000</i>"),
     category: () =>
-      replyWithButtons(chatId, "📂 <b>4/7</b> — Kategoriyani tanlang:", [
+      replyWithButtons(chatId, "📂 <b>3/5</b> — Kategoriyani tanlang:", [
         [
           { text: "🎂 Tortlar", data: "cat:cakes" },
           { text: "🧁 Kekslar", data: "cat:cupcakes" },
@@ -105,10 +108,13 @@ async function askStep(chatId: number, step: WizardStep) {
           { text: "🥐 Pishiriq", data: "cat:pastries" },
         ],
       ]),
-    desc_uz: () => reply(chatId, "📄 <b>5/7</b> — Qisqa tavsif <b>(UZ)</b>:\n\nMisol: <i>Belgiya shokoladi bilan</i>"),
-    desc_ru: () => reply(chatId, "📄 <b>6/7</b> — Qisqa tavsif <b>(RU)</b>:\n\nMisol: <i>С бельгийским шоколадом</i>"),
+    desc: () =>
+      reply(
+        chatId,
+        "📄 <b>4/5</b> — Qisqa tavsif:\n\nUZ va RU tilida, ikki qatorda yuboring:\n\n<i>Belgiya shokoladi bilan\nС бельгийским шоколадом</i>"
+      ),
     badge: () =>
-      replyWithButtons(chatId, "🏷 <b>7/7</b> — Nishon (badge):", [
+      replyWithButtons(chatId, "🏷 <b>5/5</b> — Nishon (badge):", [
         [
           { text: "🔥 Popular", data: "badge:popular" },
           { text: "✨ Yangi", data: "badge:new" },
@@ -150,10 +156,10 @@ export async function POST(req: NextRequest) {
         cookies: "🍪 Pechenye", pastries: "🥐 Pishiriq",
       };
       wizard.data.category = category;
-      wizard.step = "desc_uz";
+      wizard.step = "desc";
       await setWizard(chatId, wizard);
       await reply(chatId, `✅ ${categoryNames[category]} tanlandi.`);
-      await askStep(chatId, "desc_uz");
+      await askStep(chatId, "desc");
     }
 
     // Badge tanlandi
@@ -199,14 +205,17 @@ export async function POST(req: NextRequest) {
 
   if (wizard && text && !text.startsWith("/")) {
     switch (wizard.step) {
-      case "name_uz":
-        wizard.data.nameUz = text;
-        wizard.step = "name_ru";
-        break;
-      case "name_ru":
-        wizard.data.nameRu = text;
+      case "name": {
+        const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 2) {
+          await reply(chatId, "❌ Ikki qator kerak:\n\n<i>Shokolad torti\nШоколадный торт</i>");
+          return NextResponse.json({ ok: true });
+        }
+        wizard.data.nameUz = lines[0];
+        wizard.data.nameRu = lines[1];
         wizard.step = "price";
         break;
+      }
       case "price": {
         const price = parseInt(text.replace(/\D/g, ""));
         if (isNaN(price) || price <= 0) {
@@ -217,14 +226,17 @@ export async function POST(req: NextRequest) {
         wizard.step = "category";
         break;
       }
-      case "desc_uz":
-        wizard.data.descUz = text;
-        wizard.step = "desc_ru";
-        break;
-      case "desc_ru":
-        wizard.data.descRu = text;
+      case "desc": {
+        const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 2) {
+          await reply(chatId, "❌ Ikki qator kerak:\n\n<i>Belgiya shokoladi bilan\nС бельгийским шоколадом</i>");
+          return NextResponse.json({ ok: true });
+        }
+        wizard.data.descUz = lines[0];
+        wizard.data.descRu = lines[1];
         wizard.step = "badge";
         break;
+      }
     }
     await setWizard(chatId, wizard);
     await askStep(chatId, wizard.step);
@@ -259,10 +271,10 @@ export async function POST(req: NextRequest) {
   // ── /add — wizard boshlash ─────────────────────────────────────────────────
   if (text === "/add") {
     await delWizard(chatId);
-    const newWizard: WizardState = { step: "name_uz", data: {} };
+    const newWizard: WizardState = { step: "name", data: {} };
     await setWizard(chatId, newWizard);
     await reply(chatId, "➕ <b>Yangi mahsulot qo'shish</b>\n\n/cancel — istalgan vaqt bekor qilish");
-    await askStep(chatId, "name_uz");
+    await askStep(chatId, "name");
     return NextResponse.json({ ok: true });
   }
 
