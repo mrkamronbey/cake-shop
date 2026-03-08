@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // /start, /help
   if (text === "/start" || text === "/help") {
     const superCmds = isSuperAdmin
-      ? `\n\n<b>Super admin:</b>\n/add-admin ID — admin qo'shish\n/remove-admin ID — adminni o'chirish\n/admins — adminlar ro'yxati`
+      ? `\n\n<b>Super admin:</b>\n/add_admin ID — admin qo'shish\n/remove_admin ID — adminni o'chirish\n/admins — adminlar ro'yxati`
       : "";
 
     await reply(
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   }
 
   // /admins — adminlar ro'yxati (faqat super admin)
-  if (text === "/admins") {
+  if (text === "/admins" || text === "/admins@sweetcake_admin_bot") {
     if (!isSuperAdmin) {
       await reply(chatId, "⛔ Faqat super admin uchun.");
       return NextResponse.json({ ok: true });
@@ -79,13 +79,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // /add-admin ID (faqat super admin)
-  if (text.startsWith("/add-admin")) {
+  // /add_admin ID (faqat super admin)
+  if (text.startsWith("/add_admin")) {
     if (!isSuperAdmin) {
       await reply(chatId, "⛔ Faqat super admin uchun.");
       return NextResponse.json({ ok: true });
     }
-    const newId = text.split(" ")[1]?.trim();
+    const newId = text.replace("/add_admin", "").trim();
     if (!newId || isNaN(Number(newId))) {
       await reply(chatId, "❌ Format: /add-admin 123456789");
       return NextResponse.json({ ok: true });
@@ -99,13 +99,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // /remove-admin ID (faqat super admin)
-  if (text.startsWith("/remove-admin")) {
+  // /remove_admin ID (faqat super admin)
+  if (text.startsWith("/remove_admin")) {
     if (!isSuperAdmin) {
       await reply(chatId, "⛔ Faqat super admin uchun.");
       return NextResponse.json({ ok: true });
     }
-    const removeId = text.split(" ")[1]?.trim();
+    const removeId = text.replace("/remove_admin", "").trim();
     if (!removeId) {
       await reply(chatId, "❌ Format: /remove-admin 123456789");
       return NextResponse.json({ ok: true });
