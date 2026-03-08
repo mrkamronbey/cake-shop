@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "home": "Bosh sahifa",
+    "menu": "Menyu",
+    "order": "Buyurtma",
+    "about": "Biz haqimizda"
+  },
+  "hero": {
+    "badge": "Toshkentda eng yaxshi",
+    "title": "Yangi Pishirilgan",
+    "titleAccent": "Baxt va Lazzat",
+    "subtitle": "Siz uchun maxsus tayyorlangan tortlar va shirinliklar. Tez yetkazib berish.",
+    "cta": "Buyurtma berish",
+    "menu": "Menyuni ko'rish",
+    "stat1": "Baxtli mijoz",
+    "stat2": "Mahsulot turi",
+    "stat3": "Yillik tajriba"
+  },
+  "categories": {
+    "title": "Kategoriyalar",
+    "all": "Barchasi",
+    "cakes": "Tortlar",
+    "cupcakes": "Kekslar",
+    "cookies": "Pechenye",
+    "pastries": "Pirozhni"
+  },
+  "products": {
+    "title": "Mashhur Mahsulotlar",
+    "subtitle": "Mijozlarimiz eng ko'p buyurtma qiladigan shirinliklar",
+    "add": "Buyurtma",
+    "viewAll": "Barchasini ko'rish",
+    "new": "Yangi",
+    "popular": "Ommabop",
+    "quantity": "Miqdor",
+    "detail": "Batafsil",
+    "order": "Korzinka",
+    "back": "Orqaga",
+    "total": "Jami"
+  },
+  "features": {
+    "title": "Nima uchun biz?",
+    "delivery": "Tez Yetkazib Berish",
+    "deliveryDesc": "Buyurtmangiz 2-3 soat ichida yetkaziladi",
+    "quality": "100% Sifat",
+    "qualityDesc": "Faqat tabiiy ingredientlar ishlatiladi",
+    "custom": "Individual Dizayn",
+    "customDesc": "Xohlagan dizayndagi tort tayyorlaymiz",
+    "fresh": "Har Kuni Yangi",
+    "freshDesc": "Mahsulotlar har kuni ertalab pishiriladi"
+  },
+  "order": {
+    "title": "Buyurtma Berish",
+    "subtitle": "Formani to'ldiring, biz siz bilan bog'lanamiz",
+    "name": "Ismingiz",
+    "namePlaceholder": "Misol: Aziz",
+    "phone": "Telefon raqam",
+    "phonePlaceholder": "+998 90 123 45 67",
+    "product": "Mahsulot tanlang",
+    "productPlaceholder": "Qaysi tortni xohlaysiz?",
+    "quantity": "Miqdor",
+    "address": "Yetkazib berish manzili",
+    "addressPlaceholder": "Ko'cha, uy raqami",
+    "note": "Qo'shimcha izoh",
+    "notePlaceholder": "Dizayn, rang yoki boshqa xohishlar...",
+    "submit": "Buyurtma Yuborish",
+    "sending": "Yuborilmoqda...",
+    "success": "Buyurtmangiz qabul qilindi! Tez orada siz bilan bog'lanamiz.",
+    "error": "Xatolik yuz berdi. Qaytadan urinib ko'ring."
+  },
+  "about": {
+    "title": "Biz haqimizda",
+    "description": "2019-yildan beri Toshkentda eng mazali tortlar va shirinliklarni tayyorlab kelmoqdamiz. Har bir mahsulot sevgi va mahorat bilan tayyorlanadi.",
+    "mission": "Bizning maqsadimiz — har bir buyurtmachi uchun unutilmas ta'm va estetik zavq yaratish."
+  },
+  "footer": {
+    "rights": "Barcha huquqlar himoyalangan",
+    "phone": "Telefon",
+    "address": "Manzil",
+    "workHours": "Ish vaqti",
+    "hours": "09:00 - 21:00, Har kuni"
+  }
+}
