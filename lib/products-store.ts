@@ -24,6 +24,15 @@ export async function deleteProduct(slug: string): Promise<Product | null> {
   return target;
 }
 
+export async function updateProduct(slug: string, updates: Partial<Product>): Promise<boolean> {
+  const list = await getProducts();
+  const index = list.findIndex((p) => p.slug === slug);
+  if (index === -1) return false;
+  list[index] = { ...list[index], ...updates };
+  await redis.set(KEY, list);
+  return true;
+}
+
 export async function seedProducts(): Promise<void> {
   await redis.set(KEY, staticProducts);
 }
