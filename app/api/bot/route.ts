@@ -206,19 +206,23 @@ async function sendProductCard(chatId: number, p: Product, index: number) {
     : "🏷 Badge yo'q";
   const priceStr = p.price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
+  const badgeTop = p.badge === "popular"
+    ? "🔥 <b>Popular</b>"
+    : p.badge === "new"
+    ? "✨ <b>Yangi</b>"
+    : "";
+
   const caption =
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `${index}. ${cat?.emoji ?? "🍰"} <b>${p.nameUz}</b>\n` +
-    `<i>${p.nameRu}</i>\n` +
-    `━━━━━━━━━━━━━━━━━━━━\n` +
-    `📝 ${p.descUz}\n` +
-    `<i>${p.descRu}</i>\n\n` +
+    (badgeTop ? `${badgeTop}  |  ` : "") + `${catLabel}  <i>#${index}</i>\n\n` +
+    `🇺🇿 <b>${p.nameUz}</b>\n` +
+    `🇷🇺 <i>${p.nameRu}</i>\n\n` +
+    `💬 ${p.descUz}\n` +
+    `<i>    ${p.descRu}</i>\n\n` +
     `💰 <b>${priceStr} so'm</b>\n` +
-    `📂 ${catLabel}   ·   ${badgeLine}\n` +
     `🔑 <code>${p.slug}</code>`;
 
   const kb = { inline_keyboard: [[
-    { text: "📝 Tahrirlash", callback_data: `edit:${p.slug}` },
+    { text: "✏️ Tahrirlash", callback_data: `edit:${p.slug}` },
     { text: "🗑 O'chirish",  callback_data: `del:${p.slug}`  },
   ]]};
 
