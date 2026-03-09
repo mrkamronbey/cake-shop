@@ -143,12 +143,13 @@ async function showProductActions(chatId: number, slug: string, msgId?: number) 
   ]);
 }
 
-async function showEditMenu(chatId: number, slug: string, msgId?: number) {
+async function showEditMenu(chatId: number, slug: string, msgId?: number, toast?: string) {
   const products = await getProducts();
   const p = products.find((x) => x.slug === slug);
   const name = p ? p.nameUz : slug;
+  const header = toast ? `${toast}\n\n` : "";
   await sendOrEdit(chatId, msgId,
-    `✏️ <b>${name}</b> — tahrirlash\n\nQaysi maydonni o'zgartirish kerak?`,
+    `${header}✏️ <b>${name}</b> — tahrirlash\n\nQaysi maydonni o'zgartirish kerak?`,
     [
       [{ text: "📝 Nom",        data: `ef:${slug}:name`    }, { text: "💰 Narx",  data: `ef:${slug}:price`   }],
       [{ text: "📄 Tavsif",     data: `ef:${slug}:desc`    }, { text: "📸 Rasm",  data: `ef:${slug}:photo`   }],
@@ -467,8 +468,7 @@ export async function POST(req: NextRequest) {
         await updateProduct(editState.slug, { category: data.slice(5) as Product["category"] });
         await delEdit(chatId);
         revalidatePath("/uz"); revalidatePath("/ru");
-        await answerCb(cb.id, "✅ Kategoriya yangilandi!");
-        await showEditMenu(chatId, editState.slug, editState.msgId);
+        await showEditMenu(chatId, editState.slug, editState.msgId, "✅ Kategoriya yangilandi!");
       }
       return NextResponse.json({ ok: true });
     }
@@ -479,8 +479,8 @@ export async function POST(req: NextRequest) {
       const ok = await updateProduct(slug, { badge: (badge === "none" ? null : badge) as Product["badge"] });
       if (ok) {
         revalidatePath("/uz"); revalidatePath("/ru");
-        await answerCb(cb.id, `✅ Badge: ${badge === "none" ? "olib tashlandi" : badge}`);
-        await showEditMenu(chatId, slug, msgId);
+        const msg = badge === "none" ? "🏷 Badge olib tashlandi!" : badge === "popular" ? "🔥 Popular badge qo'shildi!" : "✨ Yangi badge qo'shildi!";
+        await showEditMenu(chatId, slug, msgId, msg);
       } else {
         await reply(chatId, "❌ Mahsulot topilmadi.");
       }
@@ -680,8 +680,7 @@ export async function POST(req: NextRequest) {
     const { slug, msgId: savedMsgId } = editState;
     await delEdit(chatId);
     revalidatePath("/uz"); revalidatePath("/ru");
-    await reply(chatId, "✅ Yangilandi!");
-    await showEditMenu(chatId, slug, savedMsgId);
+    await showEditMenu(chatId, slug, savedMsgId, "✅ Yangilandi!");
     return NextResponse.json({ ok: true });
   }
 
@@ -695,8 +694,7 @@ export async function POST(req: NextRequest) {
       await updateProduct(slug, { image: imageUrl });
       await delEdit(chatId);
       revalidatePath("/uz"); revalidatePath("/ru");
-      await reply(chatId, "✅ Rasm yangilandi!");
-      await showEditMenu(chatId, slug, savedMsgId);
+      await showEditMenu(chatId, slug, savedMsgId, "✅ Rasm yangilandi!");
     } catch { await reply(chatId, "❌ Rasm yuklanmadi. Qayta yuboring."); }
     return NextResponse.json({ ok: true });
   }
