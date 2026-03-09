@@ -62,11 +62,35 @@ async function replyKb(chatId: number, text: string, rows: Btn[][]) {
   });
 }
 
-async function answerCb(id: string) {
+async function answerCb(id: string, text?: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: id }),
+    body: JSON.stringify({ callback_query_id: id, text, show_alert: false }),
+  });
+}
+
+async function editMsgKb(chatId: number, msgId: number, text: string, rows: Btn[][]) {
+  await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: msgId,
+      text,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: rows.map((r) => r.map((b) => ({ text: b.text, callback_data: b.data }))),
+      },
+    }),
+  });
+}
+
+async function editMsgText(chatId: number, msgId: number, text: string) {
+  await fetch(`https://api.telegram.org/bot${TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: msgId, text, parse_mode: "HTML" }),
   });
 }
 
@@ -109,33 +133,31 @@ async function showProductsMenu(chatId: number) {
   );
 }
 
-async function showProductActions(chatId: number, slug: string) {
+async function showProductActions(chatId: number, slug: string, msgId?: number) {
   const products = await getProducts();
   const p = products.find((x) => x.slug === slug);
   if (!p) { await reply(chatId, "❌ Mahsulot topilmadi."); return; }
   const badge = p.badge === "popular" ? "🔥 Popular" : p.badge === "new" ? "✨ Yangi" : "badge yo'q";
-  await replyKb(
-    chatId,
-    `📦 <b>${p.nameUz}</b>\n💰 ${p.price.toLocaleString()} so'm | ${badge}`,
-    [
-      [{ text: "✏️ Tahrirlash", data: `edit:${slug}` }, { text: "🗑 O'chirish", data: `del:${slug}` }],
-      [{ text: "🔙 Mahsulotlar", data: "menu:products" }],
-    ]
-  );
+  const text = `📦 <b>${p.nameUz}</b>\n💰 ${p.price.toLocaleString()} so'm | ${badge}`;
+  const rows = [
+    [{ text: "✏️ Tahrirlash", data: `edit:${slug}` }, { text: "🗑 O'chirish", data: `del:${slug}` }],
+    [{ text: "🔙 Mahsulotlar", data: "menu:products" }],
+  ];
+  if (msgId) await editMsgKb(chatId, msgId, text, rows);
+  else await replyKb(chatId, text, rows);
 }
 
-async function showEditMenu(chatId: number, slug: string) {
-  await replyKb(
-    chatId,
-    `✏️ <b>Tahrirlash:</b> <code>${slug}</code>\n\nQaysi maydonni o'zgartirish kerak?`,
-    [
-      [{ text: "📝 Nom",        data: `ef:${slug}:name`     }, { text: "💰 Narx",       data: `ef:${slug}:price`    }],
-      [{ text: "📄 Tavsif",     data: `ef:${slug}:desc`     }, { text: "📸 Rasm",       data: `ef:${slug}:photo`    }],
-      [{ text: "📂 Kategoriya", data: `ef:${slug}:category` }],
-      [{ text: "🔥 Popular",    data: `eb:${slug}:popular`  }, { text: "✨ Yangi",      data: `eb:${slug}:new`      }, { text: "🏷 Badge yo'q", data: `eb:${slug}:none` }],
-      [{ text: "🔙 Orqaga",     data: `pv:${slug}` }],
-    ]
-  );
+async function showEditMenu(chatId: number, slug: string, msgId?: number) {
+  const text = `✏️ <b>Tahrirlash:</b> <code>${slug}</code>\n\nQaysi maydonni o'zgartirish kerak?`;
+  const rows = [
+    [{ text: "📝 Nom",        data: `ef:${slug}:name`     }, { text: "💰 Narx",       data: `ef:${slug}:price`    }],
+    [{ text: "📄 Tavsif",     data: `ef:${slug}:desc`     }, { text: "📸 Rasm",       data: `ef:${slug}:photo`    }],
+    [{ text: "📂 Kategoriya", data: `ef:${slug}:category` }],
+    [{ text: "🔥 Popular",    data: `eb:${slug}:popular`  }, { text: "✨ Yangi",      data: `eb:${slug}:new`      }, { text: "🏷 Badge yo'q", data: `eb:${slug}:none` }],
+    [{ text: "🔙 Orqaga",     data: `pv:${slug}` }],
+  ];
+  if (msgId) await editMsgKb(chatId, msgId, text, rows);
+  else await replyKb(chatId, text, rows);
 }
 
 async function showCatsMenu(chatId: number) {
@@ -244,7 +266,7 @@ async function sendProductCard(chatId: number, p: Product, index: number) {
 // ── Edit state ────────────────────────────────────────────────────────────────
 
 type EditField = "name" | "price" | "desc" | "photo" | "category";
-interface EditState { slug: string; field: EditField }
+interface EditState { slug: string; field: EditField; msgId?: number }
 
 async function getEdit(chatId: number): Promise<EditState | null> {
   return redis.get<EditState>(`sweetcake:edit:${chatId}`);
@@ -326,6 +348,7 @@ export async function POST(req: NextRequest) {
     const chatId: number = cb.message.chat.id;
     const data: string   = cb.data;
 
+    const msgId = cb.message.message_id;
     await answerCb(cb.id);
     if (!(await isAdmin(chatId))) return NextResponse.json({ ok: true });
 
@@ -348,13 +371,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
     if (data.startsWith("pv:")) {
-      await showProductActions(chatId, data.slice(3));
+      await showProductActions(chatId, data.slice(3), msgId);
       return NextResponse.json({ ok: true });
     }
 
     // ── Edit product ──
     if (data.startsWith("edit:")) {
-      await showEditMenu(chatId, data.slice(5));
+      await showEditMenu(chatId, data.slice(5), msgId);
       return NextResponse.json({ ok: true });
     }
 
@@ -364,7 +387,7 @@ export async function POST(req: NextRequest) {
       const field = parts[2] as EditField;
 
       if (field === "category") {
-        await setEdit(chatId, { slug, field });
+        await setEdit(chatId, { slug, field, msgId });
         const cats = await getCategories();
         const rows: Btn[][] = [];
         for (let i = 0; i < cats.length; i += 2) {
@@ -372,18 +395,19 @@ export async function POST(req: NextRequest) {
           if (cats[i + 1]) row.push({ text: `${cats[i+1].emoji} ${cats[i+1].nameUz}`, data: `ecat:${cats[i+1].slug}` });
           rows.push(row);
         }
-        await replyKb(chatId, "📂 Yangi kategoriyani tanlang:\n\n/cancel — bekor qilish", rows);
+        rows.push([{ text: "🔙 Orqaga", data: `edit:${slug}` }]);
+        await editMsgKb(chatId, msgId, "📂 Yangi kategoriyani tanlang:", rows);
         return NextResponse.json({ ok: true });
       }
 
-      await setEdit(chatId, { slug, field });
+      await setEdit(chatId, { slug, field, msgId });
       const prompts: Record<string, string> = {
-        name:  "📝 Yangi nom (ikki qatorda):\n\n<i>Shokolad torti\nШоколадный торт</i>",
-        price: "💰 Yangi narxni kiriting (so'm):",
-        desc:  "📄 Yangi tavsif (ikki qatorda):\n\n<i>Mazali tort\nВкусный торт</i>",
-        photo: "📸 Yangi rasmni yuboring:",
+        name:  "📝 <b>Nom tahrirlash</b>\n\nYangi nom ikki qatorda yuboring:\n\n<i>Shokolad torti\nШоколадный торт</i>\n\n/cancel — bekor qilish",
+        price: "💰 <b>Narx tahrirlash</b>\n\nYangi narxni kiriting (so'm):\n\n/cancel — bekor qilish",
+        desc:  "📄 <b>Tavsif tahrirlash</b>\n\nYangi tavsif ikki qatorda yuboring:\n\n<i>Mazali tort\nВкусный торт</i>\n\n/cancel — bekor qilish",
+        photo: "📸 <b>Rasm tahrirlash</b>\n\nYangi rasmni yuboring:\n\n/cancel — bekor qilish",
       };
-      await reply(chatId, (prompts[field] ?? "Yangi qiymat yuboring:") + "\n\n/cancel — bekor qilish");
+      await editMsgText(chatId, msgId, prompts[field] ?? "Yangi qiymat yuboring:\n\n/cancel — bekor qilish");
       return NextResponse.json({ ok: true });
     }
 
@@ -395,7 +419,8 @@ export async function POST(req: NextRequest) {
         await updateProduct(editState.slug, { category: newCatSlug as Product["category"] });
         await delEdit(chatId);
         revalidatePath("/uz"); revalidatePath("/ru");
-        await reply(chatId, "✅ Kategoriya yangilandi!");
+        await answerCb(cb.id, "✅ Kategoriya yangilandi!");
+        if (editState.msgId) await showEditMenu(chatId, editState.slug, editState.msgId);
       }
       return NextResponse.json({ ok: true });
     }
@@ -404,8 +429,11 @@ export async function POST(req: NextRequest) {
     if (data.startsWith("eb:")) {
       const [, slug, badge] = data.split(":");
       const ok = await updateProduct(slug, { badge: (badge === "none" ? null : badge) as Product["badge"] });
-      if (ok) { revalidatePath("/uz"); revalidatePath("/ru"); await reply(chatId, `✅ Badge yangilandi: ${badge === "none" ? "yo'q" : badge}`); }
-      else await reply(chatId, "❌ Mahsulot topilmadi.");
+      if (ok) {
+        revalidatePath("/uz"); revalidatePath("/ru");
+        await answerCb(cb.id, `✅ Badge yangilandi: ${badge === "none" ? "yo'q" : badge}`);
+        await showEditMenu(chatId, slug, msgId);
+      } else await reply(chatId, "❌ Mahsulot topilmadi.");
       return NextResponse.json({ ok: true });
     }
 
@@ -610,22 +638,28 @@ export async function POST(req: NextRequest) {
       default:
         return NextResponse.json({ ok: true });
     }
+    const slug = editState.slug;
+    const savedMsgId = editState.msgId;
     await delEdit(chatId);
     revalidatePath("/uz"); revalidatePath("/ru");
     await reply(chatId, "✅ Yangilandi!");
+    if (savedMsgId) await showEditMenu(chatId, slug, savedMsgId);
     return NextResponse.json({ ok: true });
   }
 
   // Edit photo
   if (fileId && editState?.field === "photo") {
     await reply(chatId, "⏳ Rasm yuklanmoqda...");
+    const photoSlug = editState.slug;
+    const photoMsgId = editState.msgId;
     try {
       const url      = await getTgFileUrl(fileId);
       const imageUrl = await uploadFromUrl(url);
-      await updateProduct(editState.slug, { image: imageUrl });
+      await updateProduct(photoSlug, { image: imageUrl });
       await delEdit(chatId);
       revalidatePath("/uz"); revalidatePath("/ru");
       await reply(chatId, "✅ Rasm yangilandi!");
+      if (photoMsgId) await showEditMenu(chatId, photoSlug, photoMsgId);
     } catch { await reply(chatId, "❌ Rasm yuklanmadi. Qayta yuboring."); }
     return NextResponse.json({ ok: true });
   }
