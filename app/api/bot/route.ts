@@ -348,7 +348,8 @@ export async function POST(req: NextRequest) {
     const chatId: number = cb.message.chat.id;
     const data: string   = cb.data;
 
-    const msgId = cb.message.message_id;
+    // photo message larni editMessageText bilan o'zgartirib bo'lmaydi
+    const msgId = cb.message.photo ? undefined : cb.message.message_id;
     await answerCb(cb.id);
     if (!(await isAdmin(chatId))) return NextResponse.json({ ok: true });
 
